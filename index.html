@@ -199,11 +199,12 @@ dialog::backdrop{background:rgba(0,0,0,.35)}
     <button id="bStop">■ Stop</button>
     <span id="startInfo" class="small muted"></span>
     <label class="small">Instrumen
-      <select id="inst"><option value="piano">Piano</option><option value="organ">Organ</option><option value="vokal">Vokal (aah)</option></select>
+      <select id="inst"><option value="piano">Piano</option><option value="organ">Organ</option><option value="vokal">Vokal (aah)</option><option value="orkestra">Orkestra</option></select>
     </label>
     <label class="small">Tampilan
       <select id="view"><option value="angka">Not angka</option><option value="balok">Not balok</option><option value="both">Keduanya</option></select>
     </label>
+    <span id="orchInfo" class="small muted"></span>
     <button id="bEdit" aria-pressed="true">✎ Editor</button>
     <button id="bSet" aria-pressed="false">⚙ Pengaturan</button>
     <button id="bHarm" class="accent">♫ Harmonisasi otomatis</button>
@@ -523,9 +524,12 @@ function parseChords(text, meter) {
       const items = tok.split('_').filter(Boolean).map(x => { const [n, d] = x.split(':'); return { n, d: d ? parseFloat(d) : null }; });
       const fixed = items.reduce((a, x) => a + (x.d || 0), 0);
       const free = items.filter(x => !x.d).length;
-      const each = free ? Math.max(0, meter - fixed) / free : 0;
+      const restB = Math.max(0, meter - fixed);
+      const each = free ? (restB / free >= 1 ? Math.floor(restB / free + EPS) : restB / free) : 0;
+      let seen = 0;
       for (const it of items) {
-        const d = it.d || each;
+        let d = it.d;
+        if (!d) { seen++; d = seen === free ? restB - each * (free - 1) : each; }
         addC(it.n, t, d); t += d;
       }
       // pastikan berakhir di batas bar
@@ -726,7 +730,7 @@ function renderBlock(song, A, bb, width, ui) {
   if (row.length) rows.push(row);
 
   const topStripH = 16, chordH = hasChords ? 24 : 4;
-  const voiceH = v => 64 + lyrN[v] * 17 * lyrScale;
+  const voiceH = v => 68 + lyrN[v] * 17 * lyrScale;
   const rowH = topStripH + chordH + vs.reduce((a, v) => a + voiceH(v), 0) + 12;
   const H = Math.max(rows.length, 1) * rowH + 6;
   const parts = [];
@@ -780,7 +784,7 @@ function renderBlock(song, A, bb, width, ui) {
     // suara
     vs.forEach(v => {
       const yTop = vy;
-      const base = yTop + 38;
+      const base = yTop + 44;
       parts.push(`<text class="lab" x="8" y="${base - 2}">${esc(vAbbr(song, v))}</text>`);
       const st = state[v];
       // lanjutan slur / hairpin dari baris sebelumnya
@@ -792,23 +796,24 @@ function renderBlock(song, A, bb, width, ui) {
         const bx = c.x + R.pad;
         const blen = A.bars[g].len;
         if (bar && bar.len > EPS && Math.abs(bar.len - blen) > EPS)
-          parts.push(`<rect class="errbg" x="${c.x + 1}" y="${base - 26}" width="${c.w - 2}" height="38" rx="3"/>`);
+          parts.push(`<rect class="errbg" x="${c.x + 1}" y="${base - 32}" width="${c.w - 2}" height="44" rx="3"/>`);
         if (bar) bar.ev.forEach(e => {
           const segs = segments(e);
           const g1 = [];
-          const xs = [];
-          segs.forEach(sg => {
+          const xs = []; let ul0 = 0;
+          segs.forEach((sg, si) => {
             const cx = bx + (sg.s + sg.l / 2) * c.bw;
             xs.push(cx);
             const ul = e.tup ? underlineLevel(e.wd) : underlineLevel(sg.l);
+            if (si === 0) ul0 = ul;
             const atS = Math.abs(sg.s - Math.round(sg.s)) < EPS, atE = Math.abs(sg.s + sg.l - Math.round(sg.s + sg.l)) < EPS;
             const x1 = bx + sg.s * c.bw + (atS ? 3 : 0), x2 = bx + (sg.s + sg.l) * c.bw - (atE ? 3 : 0);
-            for (let u = 0; u < ul; u++) g1.push(`<line class="st" x1="${x1}" x2="${x2}" y1="${base + 5 + u * 4}" y2="${base + 5 + u * 4}" stroke-width="1.2"/>`);
+            for (let u = 0; u < ul; u++) g1.push(`<line class="st" x1="${x1}" x2="${x2}" y1="${base - 23 - u * 4}" y2="${base - 23 - u * 4}" stroke-width="1.2"/>`);
             if (sg.first && e.t === 'n') {
               g1.push(`<text class="dg" x="${cx}" y="${base}" text-anchor="middle">${e.deg}</text>`);
               if (e.acc) g1.push(`<text class="acc" x="${cx - 7}" y="${base - 11}" text-anchor="middle">${e.acc > 0 ? '#' : '♭'}</text>`);
-              for (let o = 0; o < e.oct; o++) g1.push(`<circle class="fl" cx="${cx}" cy="${base - 19 - o * 5}" r="1.9"/>`);
-              for (let o = 0; o < -e.oct; o++) g1.push(`<circle class="fl" cx="${cx}" cy="${base + 9 + ul * 4 + o * 5}" r="1.9"/>`);
+              for (let o = 0; o < e.oct; o++) g1.push(`<circle class="fl" cx="${cx}" cy="${o === 0 ? base - 18.5 : base - 27 - ul * 4 - (o - 1) * 5}" r="1.9"/>`);
+              for (let o = 0; o < -e.oct; o++) g1.push(`<circle class="fl" cx="${cx}" cy="${base + 7 + o * 5}" r="1.9"/>`);
             } else if (sg.first && e.t === 'r') {
               g1.push(`<text class="dg" x="${cx}" y="${base}" text-anchor="middle">0</text>`);
             } else {
@@ -817,35 +822,35 @@ function renderBlock(song, A, bb, width, ui) {
           });
           const cx0 = xs[0];
           // tanda di atas not
-          let ay = base - 20 - Math.max(0, e.oct || 0) * 5;
+          let ay = base - 27 - ul0 * 4 - Math.max(0, (e.oct || 0) - 1) * 5;
           if (e.stac) { g1.push(`<path class="fl" d="M${cx0 - 2.5} ${ay - 4} L${cx0 + 2.5} ${ay - 4} L${cx0} ${ay + 1}Z"/>`); ay -= 7; }
           if (e.ferm) { g1.push(`<path class="st" d="M${cx0 - 7} ${ay} Q${cx0} ${ay - 11} ${cx0 + 7} ${ay}" stroke-width="1.3"/><circle class="fl" cx="${cx0}" cy="${ay - 2}" r="1.5"/>`); }
-          if (e.breath) g1.push(`<text class="mk" x="${bx + (e.start + e.dur) * c.bw - 2}" y="${base - 18}" text-anchor="middle">v</text>`);
+          if (e.breath) g1.push(`<text class="mk" x="${bx + (e.start + e.dur) * c.bw - 2}" y="${base - 22}" text-anchor="middle">v</text>`);
           if (e.dyn) g1.push(`<text class="dyn" x="${cx0 - 10}" y="${base - 26}" text-anchor="end">${e.dyn}</text>`);
           if (e.expr) g1.push(`<text class="mk" x="${cx0 - 6}" y="${yTop + 6}">${esc(e.expr.map(x => ({ rit: 'rit.', atempo: 'a tempo', accel: 'accel.', leg: 'legato' }[x])).join(' '))}</text>`);
           // lirik
           if (e.lyr) e.lyr.forEach((syl, li) => {
-            if (syl) parts.push(`<text class="ly" x="${cx0}" y="${base + 36 + li * 17 * lyrScale}" text-anchor="middle" style="font-size:${13 * lyrScale}px">${esc(syl)}</text>`);
+            if (syl) parts.push(`<text class="ly" x="${cx0}" y="${base + 30 + li * 17 * lyrScale}" text-anchor="middle" style="font-size:${13 * lyrScale}px">${esc(syl)}</text>`);
           });
           // triol
           if (e.tup && e.tupFirst) st.tup = { x: bx + e.start * c.bw + 2, n: e.tupN };
           if (e.tup && e.tupLast && st.tup) {
-            const x2 = bx + (e.start + e.dur) * c.bw - 2, x1 = st.tup.x, yb = base - 30;
+            const x2 = bx + (e.start + e.dur) * c.bw - 2, x1 = st.tup.x, yb = base - 36;
             g1.push(`<path class="st" d="M${x1} ${yb + 4} L${x1} ${yb} L${x2} ${yb} L${x2} ${yb + 4}" stroke-width="1"/><text class="num" x="${(x1 + x2) / 2}" y="${yb - 2}" text-anchor="middle" style="fill:var(--ink)">${st.tup.n}</text>`);
             st.tup = null;
           }
           // hairpin
           if (e.hair) { st.hair = { x: cx0 - 6, t: e.hair }; }
-          else if ((e.hairEnd || e.dyn) && st.hair) { drawHair(parts, st.hair, cx0 - 8, base - 33); st.hair = null; }
+          else if ((e.hairEnd || e.dyn) && st.hair) { drawHair(parts, st.hair, cx0 - 8, base - 40); st.hair = null; }
           // slur
           if (e.slurS) for (let q = 0; q < e.slurS; q++) st.slur.push({ x: cx0 });
-          if (e.slurE) for (let q = 0; q < e.slurE; q++) { const sl = st.slur.pop(); if (sl) drawSlur(parts, sl.x, cx0, base - 26); }
+          if (e.slurE) for (let q = 0; q < e.slurE; q++) { const sl = st.slur.pop(); if (sl) drawSlur(parts, sl.x, cx0, base - 32); }
           const s0 = e.start, s1 = e.start + e.dur;
           parts.push(`<g class="ev" data-g="${g}" data-v="${v}" data-s="${s0}" data-e="${s1}">${g1.join('')}</g>`);
         });
         // garis birama
         const mk = A.bars[g].marks;
-        const y1 = base - 25, y2 = base + 13;
+        const y1 = base - 32, y2 = base + 14;
         if (ci === 0) barline(parts, c.x, y1, y2, mk.repS ? 'repS' : 'n');
         const nextMk = (ci < rw.length - 1) ? A.bars[g + 1].marks : {};
         let type = 'n';
@@ -856,8 +861,8 @@ function renderBlock(song, A, bb, width, ui) {
         barline(parts, c.x + c.w, y1, y2, type);
       });
       // tutup slur/hairpin terbuka di akhir baris
-      st.slur.forEach(sl => drawSlur(parts, sl.x, rowEnd - 2, base - 26, true));
-      if (st.hair) drawHair(parts, st.hair, rowEnd - 4, base - 33);
+      st.slur.forEach(sl => drawSlur(parts, sl.x, rowEnd - 2, base - 32, true));
+      if (st.hair) drawHair(parts, st.hair, rowEnd - 4, base - 40);
       vy += voiceH(v);
     });
   });
@@ -1088,11 +1093,12 @@ function buildTimeline(song, A, opt) {
 }
 
 /* ===== Synth ===== */
-function synthNote(ctx, out, midi, t, dur, vel, inst) {
+function synthNote(ctx, out, midi, t, dur, vel, inst, voice) {
   const f = 440 * Math.pow(2, (midi - 69) / 12);
   const g = ctx.createGain(); g.connect(out);
   const end = t + Math.max(.05, dur);
   const oscs = [];
+  if (inst === 'orkestra') { orchNote(ctx, g, f, t, end, vel, ORCH_MAP[voice] || 'strings'); return; }
   if (inst === 'organ') {
     [[1, 1], [2, .35], [4, .12]].forEach(([m, a]) => {
       const o = ctx.createOscillator(); o.type = 'sine'; o.frequency.value = f * m;
@@ -1123,16 +1129,54 @@ function synthNote(ctx, out, midi, t, dur, vel, inst) {
   }
   oscs.forEach(o => { o.start(t); o.stop(end + .35); });
 }
+/* ===== Orkestra: tiap suara diberi warna alat musik sendiri ===== */
+const ORCH_MAP = { Solo: 'flute', S: 'violin', Mz: 'oboe', A: 'clarinet', T: 'horn', B: 'cello', Akor: 'pad' };
+const ORCH_NAMES = { flute: 'Flute', violin: 'Biola', oboe: 'Obo', clarinet: 'Klarinet', horn: 'Horn', cello: 'Selo', pad: 'Gesek (latar)' };
+function orchNote(ctx, g, f, t, end, vel, kind) {
+  const P = {
+    violin: { w: ['sawtooth', 'sawtooth'], det: [-6, 6], lp: 3200, q: .6, a: .08, r: .22, pk: .11, vib: .0055 },
+    cello: { w: ['sawtooth', 'sawtooth'], det: [-5, 5], lp: 1300, q: .7, a: .1, r: .28, pk: .15, vib: .004 },
+    flute: { w: ['sine', 'triangle'], det: [0, 2], lp: 4000, q: .3, a: .07, r: .15, pk: .2, vib: .004, mul: [1, 2], amp: [1, .12] },
+    oboe: { w: ['square', 'sawtooth'], det: [0, 3], lp: 2200, q: 2.2, a: .04, r: .12, pk: .08, vib: .003 },
+    clarinet: { w: ['square'], det: [0], lp: 1700, q: .8, a: .05, r: .14, pk: .1, vib: .002 },
+    horn: { w: ['sawtooth', 'triangle'], det: [-3, 3], lp: 900, q: 1.2, a: .09, r: .2, pk: .14, vib: .002, env: true },
+    pad: { w: ['sawtooth', 'sawtooth', 'sawtooth'], det: [-9, 0, 9], lp: 1400, q: .4, a: .35, r: .45, pk: .05, vib: .003 },
+  }[kind];
+  const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = P.lp; lp.Q.value = P.q; lp.connect(g);
+  if (P.env) { lp.frequency.setValueAtTime(350, t); lp.frequency.linearRampToValueAtTime(P.lp * 1.6, t + .12); lp.frequency.setTargetAtTime(P.lp, t + .14, .2); }
+  const lfo = ctx.createOscillator(); lfo.frequency.value = 5.2; const lg = ctx.createGain(); lg.gain.value = 0; lfo.connect(lg);
+  lg.gain.setValueAtTime(0, t); lg.gain.linearRampToValueAtTime(f * P.vib, t + .45);
+  const oscs = [];
+  P.w.forEach((w, i) => {
+    const o = ctx.createOscillator(); o.type = w; o.frequency.value = f * ((P.mul && P.mul[i]) || 1); o.detune.value = P.det[i] || 0;
+    lg.connect(o.frequency);
+    const a = ctx.createGain(); a.gain.value = (P.amp && P.amp[i]) ?? 1 / P.w.length;
+    o.connect(a).connect(lp); oscs.push(o);
+  });
+  const pk = P.pk * vel * 1.4;
+  g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(pk, t + P.a);
+  g.gain.setValueAtTime(pk, Math.max(t + P.a, end - .02)); g.gain.linearRampToValueAtTime(0, end + P.r);
+  lfo.start(t); lfo.stop(end + P.r + .05);
+  oscs.forEach(o => { o.start(t); o.stop(end + P.r + .05); });
+}
+function makeReverb(ctx, secs) {
+  const sr = ctx.sampleRate, n = Math.floor(sr * secs);
+  const buf = ctx.createBuffer(2, n, sr);
+  for (let c = 0; c < 2; c++) { const d = buf.getChannelData(c); for (let i = 0; i < n; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / n, 2.6); }
+  const cv = ctx.createConvolver(); cv.buffer = buf; return cv;
+}
 function click(ctx, out, t, accent) {
   const o = ctx.createOscillator(); o.type = 'square'; o.frequency.value = accent ? 1760 : 1180;
   const g = ctx.createGain(); g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(accent ? .16 : .1, t + .002); g.gain.exponentialRampToValueAtTime(.0001, t + .05);
   o.connect(g).connect(out); o.start(t); o.stop(t + .06);
 }
 const PAN = { Solo: 0, S: -.35, Mz: -.2, A: -.12, T: .12, B: .35, Akor: 0 };
-function makeBus(ctx, dest, gains) {
+function makeBus(ctx, dest, gains, inst) {
   const master = ctx.createGain(); master.gain.value = .9;
   const comp = ctx.createDynamicsCompressor(); comp.threshold.value = -14; comp.ratio.value = 3;
   master.connect(comp).connect(dest);
+  const wetAmt = { orkestra: .32, vokal: .22, organ: .18 }[inst] || 0;
+  if (wetAmt) { const rv = makeReverb(ctx, inst === 'orkestra' ? 2.6 : 1.8); const wet = ctx.createGain(); wet.gain.value = wetAmt; master.connect(rv); rv.connect(wet).connect(comp); }
   const bus = {};
   Object.keys(gains).forEach(v => {
     const g = ctx.createGain(); g.gain.value = gains[v];
@@ -1155,7 +1199,7 @@ function playerStart(tl, opt, onEnd) {
   playerStop();
   const ctx = audioCtx();
   const spb = 60 / opt.tempo;
-  const { master, bus } = makeBus(ctx, ctx.destination, opt.gains);
+  const { master, bus } = makeBus(ctx, ctx.destination, opt.gains, opt.inst);
   const countBeats = opt.countIn ? (tl.segs[0] ? Math.round(tl.segs[0].t1 - tl.segs[0].t0) : 4) : 0;
   const t0 = ctx.currentTime + .12 + countBeats * spb;
   for (let b = 0; b < countBeats; b++) click(ctx, master, t0 - (countBeats - b) * spb, b === 0);
@@ -1167,7 +1211,7 @@ function playerStart(tl, opt, onEnd) {
     while (s.idx < tl.notes.length && tl.notes[s.idx].t < horizon) {
       const n = tl.notes[s.idx++];
       const out = bus[n.v]; if (!out) continue;
-      synthNote(ctx, out, n.midi, t0 + n.t * spb, (n.end - n.t) * spb, n.vel, opt.inst);
+      synthNote(ctx, out, n.midi, t0 + n.t * spb, (n.end - n.t) * spb, n.vel, opt.inst, n.v);
     }
     while (s.cidx < clicks.length && clicks[s.cidx].t < horizon) { const c = clicks[s.cidx++]; click(ctx, master, t0 + c.t * spb, c.acc); }
     if ((ctx.currentTime - t0) / spb >= tl.total + .05) { if (!s.done) { s.done = true; onEnd && onEnd(); } }
@@ -1194,8 +1238,8 @@ async function renderWav(tl, opt) {
   const spb = 60 / opt.tempo, sr = 44100;
   const len = Math.ceil((tl.total * spb + 1.5) * sr);
   const ctx = new OfflineAudioContext(2, len, sr);
-  const { bus } = makeBus(ctx, ctx.destination, opt.gains);
-  tl.notes.forEach(n => { if (bus[n.v]) synthNote(ctx, bus[n.v], n.midi, .05 + n.t * spb, (n.end - n.t) * spb, n.vel, opt.inst); });
+  const { bus } = makeBus(ctx, ctx.destination, opt.gains, opt.inst);
+  tl.notes.forEach(n => { if (bus[n.v]) synthNote(ctx, bus[n.v], n.midi, .05 + n.t * spb, (n.end - n.t) * spb, n.vel, opt.inst, n.v); });
   const buf = await ctx.startRendering();
   return encodeWav(buf);
 }
@@ -1236,7 +1280,9 @@ function makeMidi(song, tl, opt) {
   voices.forEach((v, ci) => {
     const ch = ci % 16 === 9 ? 10 : ci % 16;
     const nm = str(v === 'Akor' ? 'Akor' : vName(song, v));
-    const evs = [{ tick: 0, ord: 0, bytes: [0xff, 0x03, ...vlq(nm.length), ...nm] }, { tick: 0, ord: 0, bytes: [0xc0 | ch, v === 'Akor' ? 0 : prog] }];
+    const ORCH_PROG = { Solo: 73, S: 40, Mz: 68, A: 71, T: 60, B: 42, Akor: 48 };
+    const pr = opt.inst === 'orkestra' ? ORCH_PROG[v] : (v === 'Akor' ? 0 : prog);
+    const evs = [{ tick: 0, ord: 0, bytes: [0xff, 0x03, ...vlq(nm.length), ...nm] }, { tick: 0, ord: 0, bytes: [0xc0 | ch, pr] }];
     tl.notes.filter(n => n.v === v).forEach(n => {
       const vel = Math.round(clamp(n.vel, .1, 1) * 112);
       evs.push({ tick: Math.round(n.t * tpb), ord: 2, bytes: [0x90 | ch, n.midi, vel] });
@@ -1256,7 +1302,7 @@ const HARM_STYLES = [
   { id: 'ritmis', name: 'Iringan ritmis', desc: 'Alto dan Tenor berdenyut tiap ketuk, Bass menahan akar akor.' },
   { id: 'paralel', name: 'Terts paralel', desc: 'Alto mengikuti Sopran satu terts di bawah, Tenor dan Bass mengisi akor.' },
   { id: 'jazz', name: 'Warna jazz', desc: 'Seperti Himne, tapi akor diberi nada ke-7 / ke-9 dengan susunan rapat.' },
-  { id: 'sahut', name: 'Sahut-sahutan', desc: 'A/T/B diam saat Sopran bernyanyi, lalu menjawab saat Sopran menahan atau diam.' },
+  { id: 'sahut', name: 'Sahut-sahutan', desc: 'Saat Sopran bernyanyi, A/T/B menahan akor pelan. Saat Sopran menahan nada atau diam, A/T/B menjawab dengan mengulang potongan melodi terakhir.' },
 ];
 const RANGE = { Mz: [57, 76], A: [55, 74], T: [48, 67], B: [40, 60] };
 const CENTER = { Mz: 66, A: 63, T: 55, B: 47 };
@@ -1348,7 +1394,7 @@ function bestVoicing(sMidi, ch, prev, fill, fixed) {
 }
 
 function durPieces(d) {
-  const out = []; let r = d;
+  const out = []; let r = Math.max(.25, Math.round(d * 4) / 4);
   for (const u of [4, 2, 1, .5, .25]) { while (r >= u - EPS) { out.push(u); r -= u; } }
   if (r > EPS) out.push(r);
   return out;
@@ -1359,6 +1405,55 @@ function writeSlot(head, isRest, d) {
   return pcs.map((u, i) => i === 0 ? (isRest ? '0' : head) + suf(u) : (isRest ? '0' : '.') + suf(u)).join(' ');
 }
 
+// Sahut-sahutan: celah (ketuk tanpa not baru di Sopran) diisi gema motif terakhir, sisanya akor tahan pelan
+function buildSahut(bb, k, blen, chordSpans, sOnsets, echoV, echoFix, st) {
+  const bar = bb.pv.S.bars[k];
+  const nBeats = Math.ceil(blen - EPS);
+  const gapBeat = [];
+  for (let b = 0; b < nBeats; b++) {
+    const onset = bar && bar.ev.some(e => e.t === 'n' && e.start >= b - EPS && e.start < b + 1 - EPS);
+    const started = sOnsets.some(o => o.k < k || (o.k === k && o.start < b + EPS));
+    gapBeat.push(!onset && started);
+  }
+  const regions = [];
+  gapBeat.forEach((gp, b) => {
+    const last = regions[regions.length - 1];
+    if (last && last.gap === gp) last.end = Math.min(blen, b + 1);
+    else regions.push({ gap: gp, start: b, end: Math.min(blen, b + 1) });
+  });
+  const spans = chordSpans();
+  const out = [];
+  const [lo, hi] = RANGE[echoV] || [55, 74];
+  const fit = m => { let best = m, bd = 1e9; for (let j = -4; j <= 4; j++) { const x = m + 12 * j; if (x >= lo && x <= hi && Math.abs(x - CENTER[echoV]) < bd) { bd = Math.abs(x - CENTER[echoV]); best = x; } } return best; };
+  regions.forEach(rg => {
+    const L = rg.end - rg.start;
+    if (rg.gap) {
+      const before = sOnsets.filter(o => o.k < k || (o.k === k && o.start < rg.start - EPS));
+      const want = L >= 2 ? Math.min(4, Math.floor(L)) : 2;
+      const src = before.slice(-want);
+      if (src.length) {
+        const each = L / src.length;
+        src.forEach((o, i) => {
+          const sl = { start: rg.start + i * each, dur: each, kind: 'n' };
+          if (i === 0 && st.last !== 'echo') sl.dyn = 'mf';
+          echoFix[sl.start.toFixed(4)] = fit(o.midi);
+          out.push(sl);
+        });
+        st.last = 'echo';
+        return;
+      }
+    }
+    // akor tahan dipotong di setiap pergantian akor
+    const cuts = [rg.start, ...spans.map(x => x.start).filter(x => x > rg.start + EPS && x < rg.end - EPS), rg.end];
+    for (let i = 0; i < cuts.length - 1; i++) {
+      const sl = { start: cuts[i], dur: cuts[i + 1] - cuts[i], kind: 'n' };
+      if (i === 0 && st.last !== 'pad') sl.dyn = 'p';
+      out.push(sl);
+    }
+    st.last = 'pad';
+  });
+  return out;
+}
 function writeHold(d) {
   const pcs = durPieces(d).flatMap(u => u > 1 ? Array(u).fill(1) : [u]);
   return pcs.map(u => '.' + (u === .5 ? '/' : u === .25 ? '//' : '')).join(' ');
@@ -1369,6 +1464,10 @@ function harmonizeBlock(song, A, bb, styleId, fill) {
   if (!sBars.some(b => b.ev.some(e => e.t === 'n'))) return { ok: false, msg: 'Sopran masih kosong' };
   const out = {}; fill.forEach(v => out[v] = []);
   let prev = null;
+  const sOnsets = [];
+  sBars.forEach((b, kk) => b.ev.forEach(e => { if (e.t === 'n') sOnsets.push({ k: kk, start: e.start, midi: e.midi }); }));
+  const echoV = fill.includes('A') ? 'A' : (fill.find(v => v !== 'B') || fill[0]);
+  const sahutState = { last: null };
   for (let k = 0; k < bb.n; k++) {
     const g = bb.from + k, key = A.bars[g].key, blen = A.bars[g].len;
     const sb = sBars[k] || { ev: [], len: 0 };
@@ -1381,21 +1480,13 @@ function harmonizeBlock(song, A, bb, styleId, fill) {
       return list.map((s, i) => ({ start: s, dur: (list[i + 1] ?? blen) - s, kind: 'n' }));
     };
     const beatSlots = () => { const r = []; for (let b = 0; b < blen - EPS; b++) r.push({ start: b, dur: Math.min(1, blen - b), kind: 'n' }); return r; };
+    const echoFix = {};
+    let sahutSlots = null;
+    if (styleId === 'sahut') sahutSlots = buildSahut(bb, k, blen, chordSpans, sOnsets, echoV, echoFix, sahutState);
     fill.forEach(v => {
       if (styleId === 'tahan') slots[v] = chordSpans();
       else if (styleId === 'ritmis') slots[v] = v === 'B' ? chordSpans() : beatSlots();
-      else if (styleId === 'sahut') {
-        const r = [];
-        beatSlots().forEach(b => {
-          const onset = sb.ev.some(e => e.t === 'n' && e.start >= b.start - EPS && e.start < b.start + 1 - EPS);
-          const kind = onset ? 'r' : 'n';
-          const last = r[r.length - 1];
-          const sameChord = last && chordAt(bb, k, last.start) === chordAt(bb, k, b.start);
-          if (last && last.kind === kind && (kind === 'r' || sameChord)) last.dur += b.dur;
-          else r.push(Object.assign({}, b, { kind }));
-        });
-        slots[v] = r;
-      } else slots[v] = sSlots();
+      else if (styleId === 'sahut') slots[v] = sahutSlots;      else slots[v] = sSlots();
       if (!slots[v].length) slots[v] = [{ start: 0, dur: blen, kind: 'r' }];
     });
     // titik perubahan gabungan
@@ -1407,6 +1498,7 @@ function harmonizeBlock(song, A, bb, styleId, fill) {
       if (styleId === 'jazz') ch = jazzify(ch, key);
       const s = sAt(bb, k, t) ?? (prev && prev.S) ?? 67;
       let fixed = null;
+      if (styleId === 'sahut' && echoFix[t.toFixed(4)] != null) fixed = { [echoV]: echoFix[t.toFixed(4)] };
       if (styleId === 'paralel' && fill.includes('A')) {
         const sn = midiToNot(s, key, false);
         const d = sn.deg - 2 < 1 ? sn.deg + 5 : sn.deg - 2;
@@ -1737,7 +1829,12 @@ function fillSettings() {
     <label class="small">Vol <input type="number" data-vv="${v}" min="0" max="150" value="${(s.vol || {})[v] ?? 100}" style="width:64px"></label>`).join('') +
     `<b>♫</b><span class="small muted">Iringan akor</span><span></span><label class="small">Vol <input type="number" data-vv="Akor" min="0" max="150" value="${(s.vol || {}).Akor ?? 100}" style="width:64px"></label>`;
 }
+function updOrch() {
+  const s = song();
+  $('#orchInfo').textContent = ui.inst === 'orkestra' ? activeVoices(s).map(v => `${vAbbr(s, v)}: ${ORCH_NAMES[ORCH_MAP[v]]}`).join(' · ') : '';
+}
 function fillControls() {
+  updOrch();
   const s = song();
   $('#cMetro').setAttribute('aria-pressed', !!ui.metro);
   $('#cCount').setAttribute('aria-pressed', !!ui.countIn); $('#cCount').textContent = 'Hitungan masuk: ' + (ui.countIn ? 'On' : 'Off');
@@ -1906,7 +2003,7 @@ function bind() {
   $('#bHelp').onclick = () => { $('#helpBody').innerHTML = HELP; $('#dlgHelp').showModal(); };
   $('#title').oninput = e => { song().title = e.target.value; changed(); $('#songSel').selectedOptions[0].textContent = e.target.value || 'Tanpa judul'; };
   $('#bPlay').onclick = play; $('#bStop').onclick = () => { stop(); };
-  $('#inst').onchange = e => { ui.inst = e.target.value; persist(); };
+  $('#inst').onchange = e => { ui.inst = e.target.value; persist(); updOrch(); if (Player.sess) { stop(); play(); } };
   $('#view').onchange = e => { ui.view = e.target.value; persist(); document.body.className = `view-${ui.view}` + (ui.edit ? '' : ' reading'); renderStaff(); };
   $('#bEdit').onclick = () => { ui.edit = !ui.edit; persist(); fullRender(); };
   const togglePanel = (btn, panel) => { const open = !$(panel).classList.contains('open'); $(panel).classList.toggle('open', open); $(btn).setAttribute('aria-pressed', open); };
